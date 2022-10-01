@@ -1,0 +1,120 @@
+import { loadStdlib, ask } from '@reach-sh/stdlib';
+import * as backend from '../build/index.main.mjs';
+const stdlib = loadStdlib();
+
+const isAnnie = await ask.ask(
+    `Are you Annie?`,
+    ask.yesno
+);
+const who = isAnnie ? 'Annie' : 'John';
+
+console.log(`Starting Morra Game as ${who}`);
+
+let acc = null;
+const createAcc = await ask.ask(
+    `Would you like to create an account? (only possible on devnet)`,
+    ask.yesno
+);
+
+if (createAcc) {
+    acc = await stdlib.newTestAccount(stdlib.parseCurrency(100));
+}
+else {
+    const secret = await ask.ask(
+        `What is your account secret?`,
+        (x => x)
+    );
+    acc = await stdlib.newAccountFromSecret(secret);
+}
+
+let ctc = null;
+if (isAnnie) {
+    ctc = acc.contract(backend);
+    ctc.getInfo().then((info) => {
+        console.log(`The contract is deployed as = ${JSON.stringify(info)}`);
+    });
+}
+else {
+    const info = await ask.ask(
+        `Please paste the contract information:`,
+        JSON.parse
+    );
+    ctc = acc.contract(backend, info);
+}
+
+const fmt = (x) => stdlib.formatCurrency(x, 4);
+const getBalance = async () => fmt(await stdlib.balanceOf(acc));
+
+const before = await getBalance();
+console.log(`Your balance is ${before}`);
+
+const interact = { ...stdlib.hasRandom };
+
+interact.informTimeout = () => {
+    console.log(`There was a timeout.`);
+    process.exit(1);
+};
+
+if (isAnnie) {
+    const amt = await ask.ask(
+        `How much do you want to wager?`,
+        stdlib.parseCurrency
+    );
+    interact.wager = amt;
+    interact.deadline = { ETH: 100, ALGO: 100, CFX: 1000 }[stdlib.connector];
+}
+else {
+    interact.acceptWager = async (amt) => {
+        const accepted = await ask.ask(
+            `Do you accept the wager of ${fmt(amt)}?`,
+            ask.yesno
+        );
+        if (!accepted) {
+            process.exit(0);
+        }
+    };
+}
+
+const GIVEN = [0, 1, 2, 3, 4, 5];
+const GUESSTOTAL = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+
+interact.numGivenByPlayer = async () => {
+    const numGiven = await ask.ask(
+        `Please input a number: `,
+        (n) => {
+            const given = GIVEN[n];
+            if (given === undefined) {
+                throw Error(`Not a valid number: ${given}`);
+            }
+            return given;
+        });
+    console.log(`You have given ${GIVEN[numGiven]}`);
+    return numGiven;
+};
+
+interact.guessNum = async () => {
+    const numGuess = await ask.ask(
+        `Please guess the total number: `,
+        (n) => {
+            const guess = GUESSTOTAL[n];
+            if (guess === undefined) {
+                throw Error(`Not a valid number: ${guess}`);
+            }
+            return guess;
+        });
+    console.log(`You have given ${GUESSTOTAL[numGuess]}`);
+    return numGuess;
+};
+
+const OUTCOME = ["Annie wins", "John wins", "Draw"];
+interact.seeOutcome = async (outcome) => {
+    console.log(`${who} saw outcome ${OUTCOME[outcome]}.`);
+}
+
+const part = isAnnie ? ctc.p.Annie : ctc.p.John;
+await part(interact);
+
+const after = await getBalance();
+console.log(`Your balance is now ${after}`);
+
+ask.done();
